@@ -1,66 +1,74 @@
-import React, {useMemo, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import './styles/app.css';
 import PostList from "./components/PostList";
 import PostForm from "./components/PostForm";
-import MySelect from "./components/UI/select/MySelect";
-import MyInput from "./components/UI/input/MyInput";
+import PostFilter from "./components/PostFilter";
+import MyModal from "./components/UI/MyModal/MyModal";
+import MyButton from "./components/UI/button/MyButton";
+import {usePosts} from "./hooks/usePosts";
+import PostService from "./API/PostService";
+import Loader from "./components/UI/loader/Loader";
+import {useFetching} from "./hooks/useFetching";
+import {getPageCount} from "./utils/pages";
 
 function App() {
-    const [posts, setPosts] = useState([
-        {id: 1, title: 'аа', body: 'бб'},
-        {id: 2, title: 'гг', body: 'аа'},
-        {id: 3, title: 'вв', body: 'яя'}
-    ]);
+    const [posts, setPosts] = useState([]);
+    const [filter, setFilter] = useState({sort: '', query: ''});
+    const [modal, setModal] = useState(false);
+    const [totalPages, setTotalPages] = useState(0);
+    const [limit, setLimit] = useState(10);
+    const [page, setPage] = useState(1);
+    const sortedAndSearchedPosts = usePosts(posts, filter.sort, filter.query);
 
-    const [selectedSort, setSelectedSort] = useState('')
-    const [searchQuery, setSearchQuery] = useState('')
-
-    const sortedPosts = useMemo(() => {
-        if (selectedSort) {
-            return [...posts].sort((a, b) => a[selectedSort].localeCompare(b[selectedSort]))
+    let pagesArray = useMemo(() => {
+        let pagesArray = [];
+        if (totalPages) {
+            for (let i = 0; i < totalPages; i++) {
+                pagesArray.push(i + 1);
+            }
         }
-        return posts;
-    }, [selectedSort, posts]);
+        return pagesArray
+    }, [totalPages]);
 
-    const sortedAndSearchedPosts = useMemo(() => {
-        return sortedPosts.filter(post => post.title.includes(searchQuery))
-    }, [searchQuery, sortedPosts])
+    console.log(pagesArray)
+
+    const [fetchPosts, isPostsLoading, postError] = useFetching(async () => {
+        const response = await PostService.getAll(limit, page)
+        setPosts(response.data)
+        const totalCount = response.headers['x-total-count'];
+        setTotalPages(getPageCount(totalCount, limit))
+    })
+
+    useEffect(() => {
+        fetchPosts();
+    },[])
 
     const createPost = (newPost) => {
         setPosts([...posts, newPost])
+        setModal(false)
     }
 
     const removePost = (post) => {
         setPosts(posts.filter(p => p.id !== post.id))
     }
 
-    const sortPosts = (sort) => {
-        setSelectedSort(sort)
-    }
-
     return (
     <div className="App">
-        <PostForm create={createPost}/>
+        <MyButton style={{marginTop: '20px'}} onClick={() => setModal(true)}>Создать пост</MyButton>
+        <MyModal
+            visible={modal}
+            setVisible={setModal}
+        >
+            <PostForm create={createPost}/>
+        </MyModal>
         <hr style={{margin: '15px 0'}}/>
-        <div>
-            <MyInput
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Поиск..."
-            />
-            <MySelect
-                value={selectedSort}
-                defaultValue="Сортировка"
-                onChange={sortPosts}
-                options={[
-                    {value: 'title', name: 'По названию'},
-                    {value: 'body', name: 'По описанию'},
-                ]}
-            />
-        </div>
-        {posts.length
-            ? <PostList remove={removePost} posts={sortedAndSearchedPosts} title={'Посты про JS'} />
-            : <h1 style={{textAlign: 'center'}}>Посты не найдены</h1>
+        <PostFilter filter={filter} setFilter={setFilter}/>
+        {postError &&
+            <h1>Произошла ошибка: ${postError}</h1>
+        }
+        {isPostsLoading
+            ? <div style={{display: 'flex', justifyContent: 'center', marginTop: '50px'}}><Loader/></div>
+            : <PostList remove={removePost} posts={sortedAndSearchedPosts} title={'Посты про JS'} />
         }
     </div>
     );
